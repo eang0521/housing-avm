@@ -15,22 +15,33 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.8'
+          python-version: '3.11'
 
+      - name: Install poetry
+        run: |
+          python -m pip install poetry
+      - name: Configure poetry
+        run: |
+          poetry config virtualenvs.in-project true
+      - name: Cache the virtualenv
+        uses: actions/cache@v2
+        with:
+          path: ./.venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('**/poetry.lock') }}
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Run tests
+          poetry install
+      - name: Run pytest
         run: |
-          pytest
+          poetry run pytest
 
-      - name: Notify Slack
-        uses: 8398a7/action-slack@v3
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_CHANNEL: '#data-detectives-prs'  # Replace with your channel
-          SLACK_USERNAME: 'eang0521'
-          SLACK_ICON_EMOJI: ':rocket:'
-          SLACK_MESSAGE: 'A pull request has been created! Check the test results.'
+  slackNotification:
+    name: Slack Notification
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Slack Notification
+      uses: rtCamp/action-slack-notify@v2
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        MSG_MINIMAL: commit
