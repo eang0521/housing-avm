@@ -3,11 +3,12 @@ name: CI
 on:
   pull_request:
     branches:
-      - main
+      - main  
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -15,33 +16,28 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.13'
+          python-version: '3.13'  # Specify your desired Python version
 
-      - name: Install poetry
+      - name: Install Poetry
         run: |
-          python -m pip install poetry
-      - name: Configure poetry
-        run: |
-          poetry config virtualenvs.in-project true
-      - name: Cache the virtualenv
-        uses: actions/cache@v2
-        with:
-          path: ./.venv
-          key: ${{ runner.os }}-venv-${{ hashFiles('**/poetry.lock') }}
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "${{ github.workspace }}/.local/bin" >> $GITHUB_PATH  # Add Poetry to PATH
+
       - name: Install dependencies
-        run: |
-          poetry install
-      - name: Run pytest
-        run: |
-          poetry run pytest
+        run: poetry install
 
-  slackNotification:
-    name: Slack Notification
+      - name: Run pytest
+        run: poetry run pytest
+
+  notify:
     runs-on: ubuntu-latest
+    needs: test 
+
     steps:
-    - uses: actions/checkout@v4
-    - name: Slack Notification
-      uses: rtCamp/action-slack-notify@v2
-      env:
-        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-        MSG_MINIMAL: commit
+      - name: Send Slack Notification
+        if: success()  
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+          PR_LINK: ${{ github.event.pull_request.html_url }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"<@${{ secrets.SLACK_MEMBER_ID }}> has opened a new pull request: <${PR_LINK}|${{ github.event.pull_request.title }}>. Please review!\"}" $SLACK_WEBHOOK_URL
