@@ -40,4 +40,4 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
           PR_LINK: ${{ github.event.pull_request.html_url }}
         run: |
-          curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"<@${{ secrets.SLACK_MEMBER_ID }}> has opened a new pull request: <${PR_LINK}|${{ github.event.pull_request.title }}>. Please review!\"}" $SLACK_WEBHOOK
+          curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"<@${{ secrets.SLACK_MEMBER_ID }}> has opened a new pull request: <${PR_LINK}|${{ github.event.pull_request.title }}>. Please review!\"}" $SLACK_WEBHOOK_URL
