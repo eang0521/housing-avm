@@ -7,23 +7,24 @@ from sklearn.preprocessing import StandardScaler
 
 # Insert Transformer code below
 class TypeDummyCreator(BaseEstimator, TransformerMixin):
-    def __init__(self):
-        pass
+    def __init__(self, columns=None):
+        self.columns = columns if columns is not None else ['type']
 
     def fit(self, X, y=None):
-        # Fit logic, if needed, goes here
+        self.categories_ = {
+            col: sorted(X[col].dropna().unique().tolist())
+            for col in self.columns
+        }
         return self
 
     def transform(self, X):
-        # Transform logic: Assume X is a DataFrame
-        # For example, let's say we want to scale the "feature_1" column
-        X_transformed = X.copy().reset_index().drop("index", axis=1)
-        dummy_df = pd.get_dummies(X_transformed["type"]).reset_index().drop("index", axis=1).astype("int")
-        X_transformed_out = pd.concat([
-            X_transformed[[x for x in X_transformed.columns if x != "type"]],
-            dummy_df,
-        ], axis=1)
-        return X_transformed_out
+        X_out = X.copy().reset_index(drop=True)
+        for col in self.columns:
+            dummies = pd.get_dummies(X_out[col], prefix=col).astype(int)
+            expected = [f"{col}_{cat}" for cat in self.categories_[col]]
+            dummies = dummies.reindex(columns=expected, fill_value=0)
+            X_out = pd.concat([X_out.drop(columns=[col]), dummies], axis=1)
+        return X_out
 
 class CustomCategoricalEncoder(BaseEstimator, TransformerMixin):
     """A custom transformer for encoding categorical variables."""
@@ -63,31 +64,26 @@ class CustomNumericImputer(BaseEstimator, TransformerMixin):
             X[col] = X[col].fillna(value)
         return X
 
-    def load_data(file_path: str) -> pd.DataFrame:
+def load_data(file_path: str) -> pd.DataFrame:
     """Load data from a CSV file."""
     return pd.read_csv(file_path)
 
 def preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
-    """Preprocess the dataset using custom transformers."""
-    # Define features
-    num_features = ['sold_price', 'bedrooms', 'sq_ft', 'build_age', 'school_score', 'unemployment', 'interest_rate']
-    cat_features = ['address', 'city', 'type']
+    """
+    Preprocess the dataset for model training.
+    - Imputes missing unemployment values with the column median.
+    - One-hot encodes 'type' and 'city' via TypeDummyCreator.
+    Returns a DataFrame with numeric columns only (sold_price included as target).
+    """
+    df = data.copy()
 
-    # Create a column transformer with custom transformers
-    preprocess = ColumnTransformer(
-        transformers=[
-            ('num', Pipeline([
-                ('imputer', CustomNumericImputer(strategy='mean')),
-                ('scaler', StandardScaler())
-            ]), num_features),
-            ('cat', CustomCategoricalEncoder(), cat_features)
-        ],
-        remainder='passthrough'  # Keep columns that are not specified
-    )
-    
-    # Transform the data
-    processed_data = preprocess.fit_transform(data)
-    
-    # Return processed DataFrame
-    # If needed, convert the transformed output to a DataFrame
-    return pd.DataFrame(processed_data, columns=num_features + list(preprocess.named_transformers_['cat'].columns))
+    num_features = ['bedrooms', 'sq_ft', 'build_age', 'school_score', 'unemployment', 'interest_rate']
+    cat_features = ['type', 'city']
+
+    imputer = CustomNumericImputer(strategy='median')
+    df[num_features] = imputer.fit_transform(df[num_features])
+
+    encoder = TypeDummyCreator(columns=cat_features)
+    df = encoder.fit_transform(df)
+
+    return df
