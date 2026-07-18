@@ -1,7 +1,7 @@
 """
 pipeline.py
 End-to-end training pipeline for house price prediction.
-Loads the enriched dataset, trains a Random Forest, and prints metrics.
+Loads the enriched dataset, trains a log-target Random Forest, and prints metrics.
 
 Usage:
     python src/ElijahA/pipeline.py
@@ -10,7 +10,9 @@ Usage:
 import math
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+from sklearn.compose import TransformedTargetRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
@@ -22,32 +24,30 @@ DATA_PATH = Path(__file__).parent.parent.parent / "data" / "house_sales_extended
 
 FEATURES = [
     # Property
-    "type", "city", "bedrooms", "bathrooms", "sq_ft", "lot_sqft",
+    "type", "city", "zip_code",
+    "bedrooms", "bathrooms", "sq_ft", "lot_sqft",
     "build_age", "stories", "garage", "hoa_fee",
     # Neighborhood / spatial
     "school_score", "median_income", "dist_bart_miles",
+    "latitude", "longitude",
     # Macro
     "unemployment", "interest_rate",
 ]
 LABEL = "sold_price"
 
-# Columns needing median imputation (NaN from scraper gaps or FRED publication lag)
 _IMPUTE_MEDIAN = ["unemployment", "bathrooms", "dist_bart_miles", "median_income"]
-
-# Hard caps on known HomeHarvest outliers (data entry errors in MLS)
-_OUTLIER_CAPS = {
-    "lot_sqft":  43_560,  # 1 acre — 99th pct for residential
-    "garage":    8,
-    "stories":   5,
-    "bathrooms": 6,
-}
+_OUTLIER_CAPS  = {"lot_sqft": 43_560, "garage": 8, "stories": 5, "bathrooms": 6}
 
 
 def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, dtype={"zip_code": str})
     for col in _IMPUTE_MEDIAN:
         if col in df.columns:
             df[col] = df[col].fillna(df[col].median())
+    # lat/lon: impute with city median (only 13 rows missing)
+    for col in ["latitude", "longitude"]:
+        if col in df.columns:
+            df[col] = df[col].fillna(df.groupby("city")[col].transform("median"))
     for col, cap in _OUTLIER_CAPS.items():
         if col in df.columns:
             df[col] = df[col].clip(upper=cap)
@@ -56,8 +56,12 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
 
 def build_pipeline() -> Pipeline:
     return Pipeline([
-        ("encode", TypeDummyCreator(columns=["type", "city"])),
-        ("model",  RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)),
+        ("encode", TypeDummyCreator(columns=["type", "city", "zip_code"])),
+        ("model", TransformedTargetRegressor(
+            regressor=RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1),
+            func=np.log1p,
+            inverse_func=np.expm1,
+        )),
     ])
 
 
@@ -74,10 +78,10 @@ def main():
     pipeline = build_pipeline()
     pipeline.fit(X_train, y_train)
 
-    preds   = pipeline.predict(X_test)
-    rmse    = math.sqrt(mean_squared_error(y_test, preds))
-    mae     = mean_absolute_error(y_test, preds)
-    r2      = r2_score(y_test, preds)
+    preds = pipeline.predict(X_test)
+    rmse  = math.sqrt(mean_squared_error(y_test, preds))
+    mae   = mean_absolute_error(y_test, preds)
+    r2    = r2_score(y_test, preds)
 
     print(f"Test RMSE : ${rmse:>10,.0f}")
     print(f"Test MAE  : ${mae:>10,.0f}")

@@ -101,7 +101,14 @@ def fetch_sold_listings(city: str, date_from: str, date_to: str) -> pd.DataFrame
     df["bathrooms"] = pd.to_numeric(df.get("bathrooms"), errors="coerce")
     df["latitude"]  = pd.to_numeric(df.get("latitude"),  errors="coerce")
     df["longitude"] = pd.to_numeric(df.get("longitude"), errors="coerce")
-    df["zip_code"]  = df.get("zip_code", "").fillna("").astype(str)
+    # zip_code: normalise to plain 5-digit string (HomeHarvest can return float "94520.0")
+    df["zip_code"]  = (
+        df.get("zip_code", pd.Series(dtype=str))
+        .fillna("")
+        .astype(str)
+        .str.replace(r"\.0$", "", regex=True)
+        .str.strip()
+    )
 
     keep = df["type"].notna() & df["date_of_sale"].notna() & df["sold_price"].notna()
     filtered = df[keep].copy()
@@ -390,10 +397,11 @@ def build_dataset(days: int = 1095, output_path: Path = OUTPUT_PATH) -> pd.DataF
 
     # 9. Final column selection
     base_cols = [
-        "address", "city", "date_of_sale", "sold_price",
+        "address", "city", "zip_code", "date_of_sale", "sold_price",
         "type", "bedrooms", "bathrooms", "sq_ft", "lot_sqft",
         "build_age", "stories", "garage", "hoa_fee",
         "school_score", "median_income", "dist_bart_miles",
+        "latitude", "longitude",
         "unemployment", "interest_rate",
     ]
     ws_cols = ["walk_score", "transit_score"] if ws_key else []

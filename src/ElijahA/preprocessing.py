@@ -93,7 +93,7 @@ def preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
     imputer = CustomNumericImputer(strategy='median')
     df[num_features] = imputer.fit_transform(df[num_features])
 
-    encoder = TypeDummyCreator(columns=['type', 'city'])
+    encoder = TypeDummyCreator(columns=['type', 'city', 'zip_code'])
     df = encoder.fit_transform(df)
 
     return df

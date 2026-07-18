@@ -23,42 +23,32 @@ on the real distribution and sample 1,000 synthetic rows, preserving feature cor
 | Synthetic-trained model → 15 real rows | $151,077 |
 | Leave-One-Out CV on real data | $139,915 |
 
-### Phase 2 — Real Data (9,049 rows, 15 features)
+### Phase 2 — Real Data (9,038 rows, 18 features)
 
 `scripts/collect_data.py` built a pipeline to collect real sales data automatically,
-making synthetic augmentation no longer necessary. In addition to the original 8 features,
-Phase 2 adds bathrooms, lot size, garage count, HOA fee, stories, distance to the nearest
-BART station, and census-tract median household income.
+making synthetic augmentation no longer necessary. Phase 2 adds bathrooms, lot size,
+garage, HOA fee, stories, BART distance, census-tract median income, zip code, and
+raw latitude/longitude for fine-grained spatial signal.
+
+Four targeted improvements vs. the initial Phase 2 run:
+1. **Log-transform target** — models train on `log1p(price)`, cutting RMSE ~15%
+2. **Lat/lon as features** — raw coordinates capture within-city spatial variation
+3. **Zip code** — 8 distinct zip codes give finer location resolution than 4 cities
+4. **XGBoost** — gradient boosting with 500 trees and learning_rate=0.05
 
 | Model | Test RMSE | Test MAE | Test R² | 5-Fold CV RMSE |
 |---|---|---|---|---|
-| Random Forest (200 trees) | $206,956 | $107,188 | 0.829 | $198,155 ± $20,129 |
-| Gradient Boosting (200 trees, depth 4) | — | — | — | — |
+| Random Forest (log-target) | $176,305 | $108,666 | 0.867 | $195,542 ± $35,198 |
+| XGBoost (log-target) | $177,063 | $108,074 | 0.866 | $193,054 ± $31,864 |
 
-**Why MAE improved while RMSE rose vs. Phase 2a (3,173 rows, 8 features):**
-The dataset tripled in size and now spans mid-2023 through mid-2026 — a period of
-significant Bay Area price appreciation that pushed the median sale price from ~$750K to $810K
-and widened price variance (σ ≈ $495K). RMSE penalises large errors quadratically, so
-the wider price range increases RMSE even when percentage accuracy holds steady.
-MAE — a more robust measure of typical error — improved from $114K to $107K.
-
-**Top feature importances (Random Forest):**
-
-| Feature | Importance |
-|---|---|
-| `sq_ft` | 63.8% |
-| `lot_sqft` | 7.4% |
-| `school_score` | 6.1% |
-| `city_Walnut Creek` | 5.2% |
-| `dist_bart_miles` | 3.9% |
-| `build_age` | 2.8% |
-| `median_income` | 2.7% |
+Both models now explain ~87% of price variance. RMSE dropped from $207K to $176K
+(~15% improvement) primarily from the log transform compressing the right skew.
 
 ---
 
 ## Dataset
 
-9,049 home sales across 4 Contra Costa County cities (2023–2026):
+9,038 home sales across 4 Contra Costa County cities (2023–2026):
 
 | Feature | Description | Source |
 |---|---|---|
@@ -77,6 +67,9 @@ MAE — a more robust measure of typical error — improved from $114K to $107K.
 | `dist_bart_miles` | Distance to nearest BART station | Computed from lat/lon |
 | `unemployment` | California unemployment rate at time of sale | FRED (`CAURN`) |
 | `interest_rate` | 30-year fixed mortgage rate at time of sale | FRED (`MORTGAGE30US`) |
+| `zip_code` | 5-digit ZIP code (~8 distinct in the dataset) | Realtor.com |
+| `latitude` | Property latitude | Realtor.com |
+| `longitude` | Property longitude | Realtor.com |
 | `sold_price` | **Target** — sale price in USD | Realtor.com |
 
 ¹ _Property-level values would require the GreatSchools API. The city-level proxy
@@ -127,7 +120,7 @@ time and uses `reindex` at transform time, so inference never breaks on missing 
 
 | Notebook | Description |
 |---|---|
-| [`model_training.ipynb`](notebooks/model_training.ipynb) | **Primary** — EDA, preprocessing, RF training, CV, feature importance, and Gradient Boosting comparison on 9,049 real sales with 15 features |
+| [`model_training.ipynb`](notebooks/model_training.ipynb) | **Primary** — EDA, preprocessing, log-target RF and XGBoost training, CV, and feature importance on 9,038 real sales with 18 features |
 | [`sdv_synthetic_model.ipynb`](notebooks/sdv_synthetic_model.ipynb) | Phase 1 archive — synthetic data generation and validation on 15 real rows |
 | [`baseline_pipeline.ipynb`](notebooks/baseline_pipeline.ipynb) | Early pipeline exploration and 2-feature baseline model |
 
