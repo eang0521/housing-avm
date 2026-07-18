@@ -1,7 +1,7 @@
 """
 pipeline.py
 End-to-end training pipeline for house price prediction.
-Loads the extended 3,173-row dataset, trains a Random Forest, and prints metrics.
+Loads the enriched dataset, trains a Random Forest, and prints metrics.
 
 Usage:
     python src/ElijahA/pipeline.py
@@ -21,16 +21,36 @@ from src.ElijahA.preprocessing import TypeDummyCreator
 DATA_PATH = Path(__file__).parent.parent.parent / "data" / "house_sales_extended.csv"
 
 FEATURES = [
-    "type", "city", "bedrooms", "sq_ft", "build_age",
-    "school_score", "unemployment", "interest_rate",
+    # Property
+    "type", "city", "bedrooms", "bathrooms", "sq_ft", "lot_sqft",
+    "build_age", "stories", "garage", "hoa_fee",
+    # Neighborhood / spatial
+    "school_score", "median_income", "dist_bart_miles",
+    # Macro
+    "unemployment", "interest_rate",
 ]
 LABEL = "sold_price"
+
+# Columns needing median imputation (NaN from scraper gaps or FRED publication lag)
+_IMPUTE_MEDIAN = ["unemployment", "bathrooms", "dist_bart_miles", "median_income"]
+
+# Hard caps on known HomeHarvest outliers (data entry errors in MLS)
+_OUTLIER_CAPS = {
+    "lot_sqft":  43_560,  # 1 acre — 99th pct for residential
+    "garage":    8,
+    "stories":   5,
+    "bathrooms": 6,
+}
 
 
 def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
     df = pd.read_csv(path)
-    # Impute unemployment for sales where FRED hasn't published data yet (~2 month lag)
-    df["unemployment"] = df["unemployment"].fillna(df["unemployment"].median())
+    for col in _IMPUTE_MEDIAN:
+        if col in df.columns:
+            df[col] = df[col].fillna(df[col].median())
+    for col, cap in _OUTLIER_CAPS.items():
+        if col in df.columns:
+            df[col] = df[col].clip(upper=cap)
     return df
 
 

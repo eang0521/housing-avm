@@ -2,7 +2,7 @@
 
 Predicts home sale prices in Contra Costa County, CA using a two-phase approach:
 first overcoming a 15-row dataset with synthetic data augmentation (SDV), then
-expanding to **3,173 real sales** via a purpose-built data collection pipeline.
+expanding to **9,049 real sales** via a purpose-built data collection pipeline.
 
 Built for the **Data Detectives 2025** internship.
 
@@ -23,32 +23,58 @@ on the real distribution and sample 1,000 synthetic rows, preserving feature cor
 | Synthetic-trained model → 15 real rows | $151,077 |
 | Leave-One-Out CV on real data | $139,915 |
 
-### Phase 2 — Real Data (3,173 rows)
+### Phase 2 — Real Data (9,049 rows, 15 features)
 
 `scripts/collect_data.py` built a pipeline to collect real sales data automatically,
-making synthetic augmentation no longer necessary.
+making synthetic augmentation no longer necessary. In addition to the original 8 features,
+Phase 2 adds bathrooms, lot size, garage count, HOA fee, stories, distance to the nearest
+BART station, and census-tract median household income.
 
 | Model | Test RMSE | Test MAE | Test R² | 5-Fold CV RMSE |
 |---|---|---|---|---|
-| Random Forest (200 trees) | $171,164 | $114,886 | 0.862 | $195,769 ± $14,298 |
-| Gradient Boosting (200 trees, depth 4) | $173,375 | $115,579 | 0.858 | $195,186 ± $12,487 |
+| Random Forest (200 trees) | $206,956 | $107,188 | 0.829 | $198,155 ± $20,129 |
+| Gradient Boosting (200 trees, depth 4) | — | — | — | — |
 
-Both models explain ~86% of variance in home sale prices on unseen data.
+**Why MAE improved while RMSE rose vs. Phase 2a (3,173 rows, 8 features):**
+The dataset tripled in size and now spans mid-2023 through mid-2026 — a period of
+significant Bay Area price appreciation that pushed the median sale price from ~$750K to $810K
+and widened price variance (σ ≈ $495K). RMSE penalises large errors quadratically, so
+the wider price range increases RMSE even when percentage accuracy holds steady.
+MAE — a more robust measure of typical error — improved from $114K to $107K.
+
+**Top feature importances (Random Forest):**
+
+| Feature | Importance |
+|---|---|
+| `sq_ft` | 63.8% |
+| `lot_sqft` | 7.4% |
+| `school_score` | 6.1% |
+| `city_Walnut Creek` | 5.2% |
+| `dist_bart_miles` | 3.9% |
+| `build_age` | 2.8% |
+| `median_income` | 2.7% |
 
 ---
 
 ## Dataset
 
-3,173 home sales across 4 Contra Costa County cities (2023–2026):
+9,049 home sales across 4 Contra Costa County cities (2023–2026):
 
 | Feature | Description | Source |
 |---|---|---|
 | `type` | Property type (Condo / Single-family / Townhome) | Realtor.com |
 | `city` | Concord, Walnut Creek, Martinez, or Pleasant Hill | Realtor.com |
 | `bedrooms` | Number of bedrooms | Realtor.com |
-| `sq_ft` | Square footage | Realtor.com |
+| `bathrooms` | Number of full bathrooms | Realtor.com |
+| `sq_ft` | Interior square footage | Realtor.com |
+| `lot_sqft` | Lot size in sq ft (0 for condos/townhomes) | Realtor.com |
 | `build_age` | Years since the property was built | Realtor.com |
+| `stories` | Number of floors | Realtor.com |
+| `garage` | Number of garage spaces | Realtor.com |
+| `hoa_fee` | Monthly HOA fee (0 if none) | Realtor.com |
 | `school_score` | City-level school rating proxy¹ | Original 15-row dataset |
+| `median_income` | Census tract median household income | ACS 5-yr (Census Reporter) |
+| `dist_bart_miles` | Distance to nearest BART station | Computed from lat/lon |
 | `unemployment` | California unemployment rate at time of sale | FRED (`CAURN`) |
 | `interest_rate` | 30-year fixed mortgage rate at time of sale | FRED (`MORTGAGE30US`) |
 | `sold_price` | **Target** — sale price in USD | Realtor.com |
@@ -63,11 +89,15 @@ Both models explain ~86% of variance in home sale prices on unseen data.
 ### Data Collection (`scripts/collect_data.py`)
 
 ```
-Realtor.com (HomeHarvest) ──► address, price, beds, sqft, type, year built, sale date
+Realtor.com (HomeHarvest) ──► address, price, beds, baths, sqft, lot, garage, HOA,
+                               stories, type, year built, sale date, lat/lon
 FRED MORTGAGE30US          ──► weekly 30-yr fixed rate  ──► joined on nearest date to sale
 FRED CAURN                 ──► monthly CA unemployment  ──► joined by year + month of sale
-                                        │
-                                        ▼
+Census Batch Geocoder      ──► address -> census tract GEOID (cached in data/tract_cache.json)
+Census Reporter API        ──► tract median household income ──► joined by GEOID
+BART station coordinates   ──► Haversine distance to nearest of 7 stations
+                                        |
+                                        v
                            data/house_sales_extended.csv
 ```
 
@@ -75,6 +105,9 @@ Re-run anytime to refresh with the latest sales:
 ```bash
 python scripts/collect_data.py --days 1095   # default: 3 years
 ```
+
+Walk Score data is optional — set the `WALKSCORE_API_KEY` environment variable to include
+`walk_score` and `transit_score` columns (free key at walkscore.com/professional/api.php).
 
 ### Model Pipeline (`src/ElijahA/pipeline.py`)
 
@@ -94,7 +127,7 @@ time and uses `reindex` at transform time, so inference never breaks on missing 
 
 | Notebook | Description |
 |---|---|
-| [`model_training.ipynb`](notebooks/model_training.ipynb) | **Primary** — EDA, preprocessing, RF training, CV, feature importance, and Gradient Boosting comparison on 3,173 real sales |
+| [`model_training.ipynb`](notebooks/model_training.ipynb) | **Primary** — EDA, preprocessing, RF training, CV, feature importance, and Gradient Boosting comparison on 9,049 real sales with 15 features |
 | [`sdv_synthetic_model.ipynb`](notebooks/sdv_synthetic_model.ipynb) | Phase 1 archive — synthetic data generation and validation on 15 real rows |
 | [`baseline_pipeline.ipynb`](notebooks/baseline_pipeline.ipynb) | Early pipeline exploration and 2-feature baseline model |
 
@@ -104,7 +137,8 @@ time and uses `reindex` at transform time, so inference never breaks on missing 
 ElijahA/
 ├── data/
 │   ├── house_sales.csv              # Original 15 real sales
-│   └── house_sales_extended.csv     # 3,173 sales from collect_data.py
+│   ├── house_sales_extended.csv     # 9,049 sales from collect_data.py
+│   └── tract_cache.json             # Geocoded census tract IDs (cached)
 ├── notebooks/
 │   ├── model_training.ipynb         # Primary model notebook (Phase 2)
 │   ├── sdv_synthetic_model.ipynb    # Synthetic data approach (Phase 1)
@@ -150,4 +184,5 @@ python scripts/collect_data.py --days 1095
 - **SDV** — Gaussian Copula synthesizer (Phase 1)
 - **HomeHarvest** — Realtor.com data collection
 - **FRED API** — mortgage rates and unemployment
+- **Census Batch Geocoder + Census Reporter** — tract-level median income
 - **pytest** — 7 unit tests for custom transformers

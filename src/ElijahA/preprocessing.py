@@ -71,19 +71,29 @@ def load_data(file_path: str) -> pd.DataFrame:
 def preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
     """
     Preprocess the dataset for model training.
-    - Imputes missing unemployment values with the column median.
+    - Clips known MLS outliers (lot_sqft, garage, stories, bathrooms).
+    - Imputes numeric NaNs with column medians.
     - One-hot encodes 'type' and 'city' via TypeDummyCreator.
     Returns a DataFrame with numeric columns only (sold_price included as target).
     """
     df = data.copy()
 
-    num_features = ['bedrooms', 'sq_ft', 'build_age', 'school_score', 'unemployment', 'interest_rate']
-    cat_features = ['type', 'city']
+    outlier_caps = {"lot_sqft": 43_560, "garage": 8, "stories": 5, "bathrooms": 6}
+    for col, cap in outlier_caps.items():
+        if col in df.columns:
+            df[col] = df[col].clip(upper=cap)
+
+    num_features = [
+        'bedrooms', 'bathrooms', 'sq_ft', 'lot_sqft', 'build_age',
+        'stories', 'garage', 'hoa_fee', 'school_score',
+        'median_income', 'dist_bart_miles', 'unemployment', 'interest_rate',
+    ]
+    num_features = [c for c in num_features if c in df.columns]
 
     imputer = CustomNumericImputer(strategy='median')
     df[num_features] = imputer.fit_transform(df[num_features])
 
-    encoder = TypeDummyCreator(columns=cat_features)
+    encoder = TypeDummyCreator(columns=['type', 'city'])
     df = encoder.fit_transform(df)
 
     return df
