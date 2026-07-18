@@ -1,5 +1,6 @@
-from sklearn.base import BaseEstimator, TransformerMixin
+import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler
@@ -63,6 +64,34 @@ class CustomNumericImputer(BaseEstimator, TransformerMixin):
         for col, value in self.imputed_values_.items():
             X[col] = X[col].fillna(value)
         return X
+
+def compute_spatial_lag(df: pd.DataFrame, window_days: int = 180) -> pd.Series:
+    """
+    For each sale compute the median price/sqft of same-zip sales in the prior
+    window_days, using only look-back data (no future leakage).
+
+    Requires columns: zip_code, sold_price, sq_ft, date_of_sale.
+    Returns a float Series aligned to df.index; NaN where fewer than 3 comps exist.
+    """
+    df = df.copy()
+    df["_date"] = pd.to_datetime(df["date_of_sale"], dayfirst=False)
+    df["_ppsf"] = df["sold_price"] / df["sq_ft"]
+    result = pd.Series(np.nan, index=df.index, dtype=float)
+    td = np.timedelta64(window_days, "D")
+
+    for _, grp in df.groupby("zip_code"):
+        idx   = grp.index.to_numpy()
+        dates = grp["_date"].values.astype("datetime64[D]")
+        ppsf  = grp["_ppsf"].to_numpy(dtype=float)
+        medians = np.full(len(grp), np.nan)
+        for i in range(len(grp)):
+            mask = (dates < dates[i]) & (dates >= dates[i] - td)
+            if mask.sum() >= 3:
+                medians[i] = np.nanmedian(ppsf[mask])
+        result.loc[idx] = medians
+
+    return result
+
 
 def load_data(file_path: str) -> pd.DataFrame:
     """Load data from a CSV file."""

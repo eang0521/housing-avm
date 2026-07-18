@@ -30,19 +30,24 @@ making synthetic augmentation no longer necessary. Phase 2 adds bathrooms, lot s
 garage, HOA fee, stories, BART distance, census-tract median income, zip code, and
 raw latitude/longitude for fine-grained spatial signal.
 
-Four targeted improvements vs. the initial Phase 2 run:
-1. **Log-transform target** — models train on `log1p(price)`, cutting RMSE ~15%
-2. **Lat/lon as features** — raw coordinates capture within-city spatial variation
-3. **Zip code** — 8 distinct zip codes give finer location resolution than 4 cities
-4. **XGBoost** — gradient boosting with 500 trees and learning_rate=0.05
+Iterative improvements in three rounds:
+
+**Round 1** — log transform + zip/lat/lon + XGBoost:
+- Log-target (`log1p`/`expm1`) compresses right skew → −15% RMSE
+- Zip code (8 ZIP codes) and raw lat/lon give within-city spatial signal
+- XGBoost added as model comparison
+
+**Round 2** — comparable-sales feature + Optuna tuning:
+- `comp_ppsf`: median price/sqft of same-ZIP sales in prior 180 days — captures local micro-market conditions without look-ahead
+- 50-trial Optuna Bayesian search over XGBoost hyperparameters
 
 | Model | Test RMSE | Test MAE | Test R² | 5-Fold CV RMSE |
 |---|---|---|---|---|
-| Random Forest (log-target) | $176,305 | $108,666 | 0.867 | $195,542 ± $35,198 |
-| XGBoost (log-target) | $177,063 | $108,074 | 0.866 | $193,054 ± $31,864 |
+| Random Forest (log-target) | $178,607 | $110,042 | 0.863 | $195,618 ± $34,561 |
+| XGBoost (log-target, default) | **$173,864** | **$107,188** | **0.871** | $190,178 ± $32,208 |
+| XGBoost (log-target, Optuna-tuned) | $176,094 | $108,991 | 0.867 | $191,579 ± $34,795 |
 
-Both models now explain ~87% of price variance. RMSE dropped from $207K to $176K
-(~15% improvement) primarily from the log transform compressing the right skew.
+XGBoost with default hyperparameters is the best model: R² 0.871, RMSE $174K (~21% of median sale price $810K). The Optuna search converged to a heavily-regularised config that matches but doesn't beat the defaults at this data size — more trials or a narrower search space would likely improve it further.
 
 ---
 

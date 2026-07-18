@@ -17,7 +17,8 @@ dependencies = [
     "sdv (>=1.17.0)",
     "requests (>=2.32.0)",
     "homeharvest (>=0.3.0)",
-    "xgboost (>=2.0.0)"
+    "xgboost (>=2.0.0)",
+    "optuna (>=4.0.0)"
 ]
 
 

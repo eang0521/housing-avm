@@ -18,7 +18,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 
-from src.ElijahA.preprocessing import TypeDummyCreator
+from src.ElijahA.preprocessing import TypeDummyCreator, compute_spatial_lag
 
 DATA_PATH = Path(__file__).parent.parent.parent / "data" / "house_sales_extended.csv"
 
@@ -30,6 +30,8 @@ FEATURES = [
     # Neighborhood / spatial
     "school_score", "median_income", "dist_bart_miles",
     "latitude", "longitude",
+    # Comparable-sales signal
+    "comp_ppsf",
     # Macro
     "unemployment", "interest_rate",
 ]
@@ -44,13 +46,18 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
     for col in _IMPUTE_MEDIAN:
         if col in df.columns:
             df[col] = df[col].fillna(df[col].median())
-    # lat/lon: impute with city median (only 13 rows missing)
     for col in ["latitude", "longitude"]:
         if col in df.columns:
             df[col] = df[col].fillna(df.groupby("city")[col].transform("median"))
     for col, cap in _OUTLIER_CAPS.items():
         if col in df.columns:
             df[col] = df[col].clip(upper=cap)
+    # Comparable-sales signal: median price/sqft in same zip, prior 180 days
+    print("Computing spatial lag (comp_ppsf)...")
+    df["comp_ppsf"] = compute_spatial_lag(df)
+    df["comp_ppsf"] = df["comp_ppsf"].fillna(
+        df.groupby("zip_code")["comp_ppsf"].transform("median")
+    ).fillna(df["comp_ppsf"].median())
     return df
 
 
